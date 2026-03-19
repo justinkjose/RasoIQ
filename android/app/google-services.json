@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "652237808229",
+    "project_id": "rasoiq",
+    "storage_bucket": "rasoiq.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:652237808229:android:e2aa7351ff8b063a3fdc8c",
+        "android_client_info": {
+          "package_name": "com.rasoiq.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAXG2FTIo61RYkGrPWfYPd20ywQfS77IA8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

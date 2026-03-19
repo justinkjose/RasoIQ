@@ -1,0 +1,60 @@
+﻿{
+  "recipes": [
+    {
+      "id": "r1",
+      "name": "Tomato Rice Bowl",
+      "image": "",
+      "description": "Comforting rice with tomato and spices.",
+      "cookTimeMinutes": 30,
+      "ingredients": [
+        {"name": "rice", "quantity": 1.0, "unit": "kg"},
+        {"name": "tomato", "quantity": 4, "unit": "pcs"},
+        {"name": "onion", "quantity": 2, "unit": "pcs"},
+        {"name": "oil", "quantity": 2, "unit": "tbsp"},
+        {"name": "spice powder", "quantity": 1, "unit": "tbsp"}
+      ],
+      "steps": [
+        "Rinse and cook rice until fluffy.",
+        "Saute onion and tomato in oil.",
+        "Add spices and combine with rice."
+      ],
+      "nutrition": {"calories": 520, "protein": 12, "carbs": 98, "fat": 10}
+    },
+    {
+      "id": "r2",
+      "name": "Creamy Milk Porridge",
+      "image": "",
+      "description": "Warm porridge with milk and grains.",
+      "cookTimeMinutes": 25,
+      "ingredients": [
+        {"name": "milk", "quantity": 0.5, "unit": "litre"},
+        {"name": "rice", "quantity": 0.25, "unit": "kg"},
+        {"name": "sugar", "quantity": 2, "unit": "tbsp"}
+      ],
+      "steps": [
+        "Simmer milk in a pot.",
+        "Add rice and cook until soft.",
+        "Sweeten to taste and serve warm."
+      ],
+      "nutrition": {"calories": 360, "protein": 9, "carbs": 58, "fat": 9}
+    },
+    {
+      "id": "r3",
+      "name": "Veggie Stir Fry",
+      "image": "",
+      "description": "Quick stir fry with mixed vegetables.",
+      "cookTimeMinutes": 15,
+      "ingredients": [
+        {"name": "tomato", "quantity": 2, "unit": "pcs"},
+        {"name": "onion", "quantity": 1, "unit": "pcs"},
+        {"name": "oil", "quantity": 1, "unit": "tbsp"}
+      ],
+      "steps": [
+        "Heat oil in a pan.",
+        "Add vegetables and stir fry on high heat.",
+        "Season and serve."
+      ],
+      "nutrition": {"calories": 180, "protein": 4, "carbs": 18, "fat": 10}
+    }
+  ]
+}
