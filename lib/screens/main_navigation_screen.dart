@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../features/grocery/presentation/bazaar_screen.dart';
+import '../features/grocery/presentation/grocery_lists_screen.dart';
 import '../features/pantry/presentation/kitchen_stock_screen.dart';
 import '../features/recipes/presentation/recipes_screen.dart';
 import '../profile/profile_screen.dart';
@@ -103,7 +103,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Widget _buildRootScreen(int index) {
     switch (index) {
       case 0:
-        return const BazaarScreen();
+        return const GroceryListsScreen();
       case 1:
         return const KitchenStockScreen();
       case 2:

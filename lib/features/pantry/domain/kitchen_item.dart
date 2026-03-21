@@ -1,12 +1,14 @@
 class KitchenItem {
   const KitchenItem({
     required this.id,
+    this.userId = '',
     required this.name,
     required this.category,
     required this.batches,
   });
 
   final String id;
+  final String userId;
   final String name;
   final String category;
   final List<KitchenBatch> batches;
@@ -18,12 +20,14 @@ class KitchenItem {
 
   KitchenItem copyWith({
     String? id,
+    String? userId,
     String? name,
     String? category,
     List<KitchenBatch>? batches,
   }) {
     return KitchenItem(
       id: id ?? this.id,
+      userId: userId ?? this.userId,
       name: name ?? this.name,
       category: category ?? this.category,
       batches: batches ?? this.batches,
@@ -33,6 +37,7 @@ class KitchenItem {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'userId': userId,
       'name': name,
       'category': category,
       'batches': batches.map((batch) => batch.toJson()).toList(),
@@ -42,6 +47,7 @@ class KitchenItem {
   factory KitchenItem.fromJson(Map<String, dynamic> json) {
     return KitchenItem(
       id: json['id'] as String,
+      userId: json['userId']?.toString() ?? '',
       name: json['name'] as String,
       category: json['category']?.toString() ?? 'Miscellaneous',
       batches: (json['batches'] as List<dynamic>? ?? [])

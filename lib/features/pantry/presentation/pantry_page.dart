@@ -320,13 +320,16 @@ class _PantryPageState extends State<PantryPage> {
                 const SizedBox(height: AppTheme.space16),
                 _LowStockList(items: data.lowStock, onAdd: _addToGrocery),
                 const SizedBox(height: AppTheme.space24),
-                const SectionHeader(title: 'Cook Tonight'),
-                const SizedBox(height: AppTheme.space16),
-                _CookTonightList(
-                  recipes: data.recipes,
-                  onAddMissing: (recipe) =>
-                      _addMissingIngredients(recipe, data.items),
-                ),
+                  const SectionHeader(title: 'Cook Tonight'),
+                  const SizedBox(height: AppTheme.space16),
+                  _CookTonightList(
+                    recipes: data.recipes,
+                    availableIngredients: data.items
+                        .map((item) => _normalize(item.name))
+                        .toSet(),
+                    onAddMissing: (recipe) =>
+                        _addMissingIngredients(recipe, data.items),
+                  ),
                 const SizedBox(height: AppTheme.space24),
                 const SectionHeader(title: 'Pantry Categories'),
                 const SizedBox(height: AppTheme.space16),
@@ -669,10 +672,12 @@ class _LowStockList extends StatelessWidget {
 class _CookTonightList extends StatelessWidget {
   const _CookTonightList({
     required this.recipes,
+    required this.availableIngredients,
     required this.onAddMissing,
   });
 
   final List<RecipeDetail> recipes;
+  final Set<String> availableIngredients;
   final ValueChanged<RecipeDetail> onAddMissing;
 
   @override
@@ -695,17 +700,18 @@ class _CookTonightList extends StatelessWidget {
               title: recipe.name,
               timeLabel: '${recipe.cookTimeMinutes} min',
               image: recipe.image,
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => RecipeDetailScreen(
-                      recipe: recipe,
-                      onAddMissing: () => onAddMissing(recipe),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => RecipeDetailScreen(
+                        recipe: recipe,
+                        availableIngredients: availableIngredients,
+                        onAddMissing: () => onAddMissing(recipe),
+                      ),
                     ),
-                  ),
-                );
-              },
-            ),
+                  );
+                },
+              ),
           );
         },
       ),

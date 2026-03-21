@@ -15,7 +15,7 @@ class CookTonightService {
   final PantryService _pantryService;
 
   Future<CookTonightSuggestion?> getTopSuggestion() async {
-    final recipes = await _recipesRepository.loadRecipes();
+    final recipes = await _recipesRepository.loadRecipeMeta();
     final pantry = await _pantryService.getItems();
     if (recipes.isEmpty || pantry.isEmpty) return null;
 
@@ -25,23 +25,25 @@ class CookTonightService {
     CookTonightSuggestion? best;
     double bestScore = 0;
 
-    for (final recipe in recipes) {
-      final total = recipe.ingredients.length;
+    for (final meta in recipes) {
+      final total = meta.ingredients.length;
       if (total == 0) continue;
 
-      final availableIngredients = recipe.ingredients
-          .where((ingredient) => pantryNormalized.contains(_normalize(ingredient.name)))
+      final availableIngredients = meta.ingredients
+          .where((ingredient) => pantryNormalized.contains(_normalize(ingredient)))
           .toList();
       final available = availableIngredients.length;
       final matchPercent = available / total;
       if (matchPercent < 0.6) continue;
 
-      final missingIngredients = recipe.ingredients
-          .where((ingredient) => !pantryNormalized.contains(_normalize(ingredient.name)))
-          .map((ingredient) => ingredient.name)
+      final missingIngredients = meta.ingredients
+          .where((ingredient) => !pantryNormalized.contains(_normalize(ingredient)))
+          .map((ingredient) => ingredient)
           .toList();
 
-      final expiringIngredient = _firstExpiringIngredient(recipe, expiring);
+      final detail = await _recipesRepository.loadRecipeDetail(meta.id);
+      if (detail == null) continue;
+      final expiringIngredient = _firstExpiringIngredient(detail, expiring);
       var score = matchPercent;
       if (expiringIngredient != null) {
         score += 0.2;
@@ -50,7 +52,7 @@ class CookTonightService {
       if (score > bestScore) {
         bestScore = score;
         best = CookTonightSuggestion(
-          recipeName: recipe.name,
+          recipeName: detail.name,
           matchPercent: matchPercent,
           missingIngredients: missingIngredients,
         );

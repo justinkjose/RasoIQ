@@ -8,6 +8,7 @@ import '../../../theme/app_theme.dart';
 import '../../../widgets/app_widgets.dart';
 import '../../grocery/data/user_item_storage.dart';
 import '../../grocery/domain/user_item.dart';
+import '../widgets/kitchen_add_item_sheet.dart';
 import '../domain/kitchen_item.dart';
 import '../providers/kitchen_stock_provider.dart';
 import 'pantry_expiry_calendar_page.dart';
@@ -22,6 +23,7 @@ class KitchenStockScreen extends StatefulWidget {
 
 class _KitchenStockScreenState extends State<KitchenStockScreen> {
   final SpeechToText _speech = SpeechToText();
+  final UserItemStorage _userItemStorage = UserItemStorage();
   bool _isListening = false;
   String _lastWords = '';
 
@@ -279,11 +281,48 @@ class _KitchenStockScreenState extends State<KitchenStockScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => _AddKitchenItemSheet(
+      builder: (_) => KitchenAddItemSheet(
         initialName: name,
         initialQuantity: quantity,
         initialUnit: unit,
         initialCategory: category,
+        onSubmit: (payload) async {
+          final baseUnit = _baseUnitFromUnit(payload.unit);
+          final baseQuantity = _toBaseQuantity(
+            payload.totalQuantity,
+            payload.unit,
+          );
+          final provider = context.read<KitchenStockProvider>();
+          KitchenItem? existing;
+          for (final item in provider.items) {
+            if (item.name.toLowerCase() == payload.name.toLowerCase()) {
+              existing = item;
+              break;
+            }
+          }
+
+          final batch = KitchenBatch(
+            quantity: baseQuantity,
+            unit: baseUnit,
+            addedDate: DateTime.now(),
+            expiryDate: payload.expiryDate,
+          );
+
+          if (existing != null) {
+            await provider.addBatch(existing, batch);
+          } else {
+            await provider.addItem(
+              KitchenItem(
+                id: DateTime.now().microsecondsSinceEpoch.toString(),
+                name: payload.name,
+                category: payload.category,
+                batches: [batch],
+              ),
+            );
+          }
+
+          await _learnUserItemIfNeeded(payload.name, payload.category);
+        },
       ),
     );
   }
@@ -458,6 +497,46 @@ class _KitchenStockScreenState extends State<KitchenStockScreen> {
       }
     }
     return 'Miscellaneous';
+  }
+
+  Future<void> _learnUserItemIfNeeded(String name, String category) async {
+    if (_isInDefaultCatalog(name)) return;
+    final items = await _userItemStorage.loadUserItems();
+    final normalized = _normalizeName(name);
+    final exists = items.any(
+      (item) => _normalizeName(item.name) == normalized,
+    );
+    if (exists) return;
+    items.add(
+      UserItem(
+        id: _normalizeName(name),
+        name: name,
+        category: category,
+        unit: 'pcs',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        pendingSync: true,
+      ),
+    );
+    await _userItemStorage.saveUserItems(items);
+  }
+
+  bool _isInDefaultCatalog(String name) {
+    final normalized = _normalizeName(name);
+    for (final entry in DefaultGroceryCatalog.categories.entries) {
+      for (final item in entry.value) {
+        if (_normalizeName(item) == normalized) return true;
+      }
+    }
+    return false;
+  }
+
+  String _normalizeName(String input) {
+    return input
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9\\s]'), ' ')
+        .replaceAll(RegExp(r'\\s+'), ' ')
+        .trim();
   }
 
   String _baseUnitForItem(KitchenItem item) {
@@ -921,297 +1000,6 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _AddKitchenItemSheet extends StatefulWidget {
-  const _AddKitchenItemSheet({
-    this.initialName,
-    this.initialQuantity,
-    this.initialUnit,
-    this.initialCategory,
-  });
-
-  final String? initialName;
-  final double? initialQuantity;
-  final String? initialUnit;
-  final String? initialCategory;
-
-  @override
-  State<_AddKitchenItemSheet> createState() => _AddKitchenItemSheetState();
-}
-
-class _AddKitchenItemSheetState extends State<_AddKitchenItemSheet> {
-  late final TextEditingController _nameController;
-  late final TextEditingController _packSizeController;
-  int _packCount = 1;
-  late String _unit;
-  late String _category;
-  DateTime? _expiryDate;
-  final UserItemStorage _userItemStorage = UserItemStorage();
-
-  @override
-  void initState() {
-    super.initState();
-    _nameController = TextEditingController(text: widget.initialName ?? '');
-    _packSizeController = TextEditingController(
-      text: widget.initialQuantity == null
-          ? ''
-          : widget.initialQuantity!.toString(),
-    );
-    _category = widget.initialCategory ??
-        _detectCategory(widget.initialName ?? '');
-    _unit = widget.initialUnit ?? _unitsForCategory(_category).first;
-    _nameController.addListener(() {
-      final detected = _detectCategory(_nameController.text.trim());
-      if (detected != _category) {
-        setState(() {
-          _category = detected;
-          final updatedUnits = _unitsForCategory(_category);
-          if (updatedUnits.isNotEmpty) {
-            _unit = updatedUnits.first;
-          }
-        });
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _packSizeController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final unitOptions = _unitsForCategory(_category);
-    if (!unitOptions.contains(_unit)) {
-      _unit = unitOptions.first;
-    }
-
-    return Padding(
-      padding: EdgeInsets.only(
-        left: AppTheme.space24,
-        right: AppTheme.space24,
-        top: AppTheme.space16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + AppTheme.space24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Add to Kitchen', style: AppTextStyles.titleMedium),
-          const SizedBox(height: AppTheme.space16),
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(labelText: 'Item name'),
-          ),
-          const SizedBox(height: AppTheme.space12),
-          TextField(
-            controller: _packSizeController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Pack size (optional)'),
-          ),
-          const SizedBox(height: AppTheme.space12),
-          Row(
-            children: [
-              Expanded(
-                child: _Stepper(
-                  label: 'Quantity',
-                  value: _packCount,
-                  onChanged: (value) => setState(() => _packCount = value),
-                ),
-              ),
-              const SizedBox(width: AppTheme.space12),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  initialValue: _unit,
-                  decoration: const InputDecoration(labelText: 'Unit'),
-                  items: unitOptions
-                      .map(
-                        (unit) => DropdownMenuItem(
-                          value: unit,
-                          child: Text(unit),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) => setState(() => _unit = value ?? _unit),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.space12),
-          OutlinedButton.icon(
-            onPressed: () async {
-              final date = await showDatePicker(
-                context: context,
-                initialDate: DateTime.now().add(const Duration(days: 3)),
-                firstDate: DateTime.now(),
-                lastDate: DateTime.now().add(const Duration(days: 365)),
-              );
-              if (date != null) {
-                setState(() => _expiryDate = date);
-              }
-            },
-            icon: const Icon(Icons.event_outlined),
-            label: Text(
-              _expiryDate == null
-                  ? 'Set Expiry Date'
-                  : 'Expiry: ${_expiryDate!.day}/${_expiryDate!.month}/${_expiryDate!.year}',
-            ),
-          ),
-          const SizedBox(height: AppTheme.space16),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
-                ),
-              ),
-              const SizedBox(width: AppTheme.space12),
-              Expanded(
-                child: FilledButton(
-                  onPressed: () => _submit(context),
-                  child: const Text('Add'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _submit(BuildContext context) async {
-    final name = _nameController.text.trim();
-    if (name.isEmpty) return;
-
-    final packSize = double.tryParse(_packSizeController.text.trim()) ?? 0;
-    final totalQuantity =
-        packSize > 0 ? packSize * _packCount : _packCount.toDouble();
-    final baseQuantity = _toBaseQuantity(totalQuantity, _unit);
-    final baseUnit = _baseUnitFromUnit(_unit);
-    final category = _detectCategory(name);
-
-    final provider = context.read<KitchenStockProvider>();
-    KitchenItem? existing;
-    for (final item in provider.items) {
-      if (item.name.toLowerCase() == name.toLowerCase()) {
-        existing = item;
-        break;
-      }
-    }
-
-    final batch = KitchenBatch(
-      quantity: baseQuantity,
-      unit: baseUnit,
-      addedDate: DateTime.now(),
-      expiryDate: _expiryDate,
-    );
-
-    if (existing != null) {
-      await provider.addBatch(existing, batch);
-    } else {
-      await provider.addItem(
-        KitchenItem(
-          id: DateTime.now().microsecondsSinceEpoch.toString(),
-          name: name,
-          category: category,
-          batches: [batch],
-        ),
-      );
-    }
-
-    await _learnUserItemIfNeeded(name, category);
-
-    if (!context.mounted) return;
-    Navigator.of(context).pop();
-  }
-
-  List<String> _unitsForCategory(String categoryKey) {
-    final normalized = categoryKey.toLowerCase();
-    final units = <String>[];
-    if (normalized.contains('dairy') || normalized.contains('oil')) {
-      units.addAll(['ml', 'litre']);
-    } else if (normalized.contains('snack') ||
-        normalized.contains('toiletr') ||
-        normalized.contains('clean') ||
-        normalized.contains('baby') ||
-        normalized.contains('kitchen') ||
-        normalized.contains('misc')) {
-      units.addAll(['pcs']);
-    } else {
-      units.addAll(['kg', 'g']);
-    }
-    return units.toSet().toList();
-  }
-
-  String _detectCategory(String name) {
-    for (final entry in DefaultGroceryCatalog.categories.entries) {
-      for (final item in entry.value) {
-        if (item.toLowerCase() == name.toLowerCase()) {
-          return entry.key;
-        }
-      }
-    }
-    return 'Miscellaneous';
-  }
-
-  Future<void> _learnUserItemIfNeeded(String name, String category) async {
-    if (_isInDefaultCatalog(name)) return;
-    final items = await _userItemStorage.loadUserItems();
-    final normalized = _normalizeName(name);
-    final exists = items.any(
-      (item) => _normalizeName(item.name) == normalized,
-    );
-    if (exists) return;
-    items.add(
-      UserItem(
-        name: name,
-        category: category,
-        createdAt: DateTime.now(),
-      ),
-    );
-    await _userItemStorage.saveUserItems(items);
-  }
-
-  bool _isInDefaultCatalog(String name) {
-    final normalized = _normalizeName(name);
-    for (final entry in DefaultGroceryCatalog.categories.entries) {
-      for (final item in entry.value) {
-        if (_normalizeName(item) == normalized) return true;
-      }
-    }
-    return false;
-  }
-
-  String _normalizeName(String input) {
-    return input
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9\\s]'), ' ')
-        .replaceAll(RegExp(r'\\s+'), ' ')
-        .trim();
-  }
-
-  String _baseUnitFromUnit(String unit) {
-    switch (unit) {
-      case 'kg':
-      case 'g':
-        return 'g';
-      case 'litre':
-      case 'ml':
-        return 'ml';
-      default:
-        return 'pcs';
-    }
-  }
-
-  int _toBaseQuantity(double quantity, String unit) {
-    if (unit == 'kg' || unit == 'litre') {
-      return (quantity * 1000).round();
-    }
-    return quantity.round();
-  }
-}
 class _AddBatchSheet extends StatefulWidget {
   const _AddBatchSheet({required this.item});
 
@@ -1508,51 +1296,6 @@ class _UseQuantitySheetState extends State<_UseQuantitySheet> {
   }
 }
 
-class _Stepper extends StatelessWidget {
-  const _Stepper({
-    required this.label,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String label;
-  final int value;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: AppTextStyles.bodySmall),
-        const SizedBox(height: AppTheme.space8),
-        Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-            border: Border.all(color: Theme.of(context).dividerColor),
-          ),
-          child: Row(
-            children: [
-              IconButton(
-                onPressed: value > 1 ? () => onChanged(value - 1) : null,
-                icon: const Icon(Icons.remove),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text('$value', style: AppTextStyles.bodyLarge),
-                ),
-              ),
-              IconButton(
-                onPressed: () => onChanged(value + 1),
-                icon: const Icon(Icons.add),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _VoiceParseResult {
   const _VoiceParseResult({

@@ -20,7 +20,7 @@ class QRExportScreen extends StatelessWidget {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final data = snapshot.data ?? '';
+          final data = 'RASOIQ_EXPORT:${snapshot.data ?? ''}';
           return ListView(
             padding: const EdgeInsets.all(24),
             children: [
@@ -30,7 +30,10 @@ class QRExportScreen extends StatelessWidget {
                 child: QrImageView(
                   data: data,
                   version: QrVersions.auto,
-                  size: 260,
+                  size: 220,
+                  errorStateBuilder: (context, error) {
+                    return const Center(child: Text('QR too large'));
+                  },
                 ),
               ),
               const SizedBox(height: 16),

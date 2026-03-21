@@ -19,4 +19,13 @@ class RecipeNutrition {
       fat: (json['fat'] as num).toInt(),
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'calories': calories,
+      'protein': protein,
+      'carbs': carbs,
+      'fat': fat,
+    };
+  }
 }

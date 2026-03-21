@@ -12,10 +12,13 @@ import 'dart:io';
 import '../../../data/default_grocery_catalog.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/app_widgets.dart';
+import '../../../services/ads_service.dart';
+import '../../../data/models/ad_item.dart';
 import '../domain/grocery_item.dart';
 import '../domain/grocery_unit.dart';
 import '../domain/user_item.dart';
 import '../providers/grocery_provider.dart';
+import '../widgets/grocery_add_item_sheet.dart';
 import '../services/whisper_transcription_service.dart';
 import '../../pantry/presentation/kitchen_stock_screen.dart';
 import '../../pantry/domain/kitchen_item.dart';
@@ -36,12 +39,19 @@ class _BazaarScreenState extends State<BazaarScreen> {
   final SpeechToText _speech = SpeechToText();
   final WhisperTranscriptionService _whisperService =
       WhisperTranscriptionService();
+  final AdsService _adsService = AdsService();
   bool _isListening = false;
   String _lastWords = '';
+  late final Future<List<AdItem>> _bannerAdsFuture;
+  late final Future<List<AdItem>> _productAdsFuture;
 
   @override
   void initState() {
     super.initState();
+    _bannerAdsFuture =
+        _adsService.getAdsForScreen('grocery', type: 'banner');
+    _productAdsFuture =
+        _adsService.getAdsForScreen('grocery', type: 'product');
   }
 
   @override
@@ -57,7 +67,7 @@ class _BazaarScreenState extends State<BazaarScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Bazaar', style: AppTextStyles.headingMedium),
+        title: Text(provider.activeListName, style: AppTextStyles.headingMedium),
         actions: [
           IconButton(
             onPressed: () {
@@ -85,6 +95,11 @@ class _BazaarScreenState extends State<BazaarScreen> {
                 _ShoppingModeToggle(
                   value: provider.shoppingMode,
                   onChanged: provider.setShoppingMode,
+                ),
+                const SizedBox(height: AppTheme.space12),
+                _AdsSection(
+                  bannerFuture: _bannerAdsFuture,
+                  productFuture: _productAdsFuture,
                 ),
                 if (!provider.shoppingMode) ...[
                   const SizedBox(height: AppTheme.space16),
@@ -176,11 +191,23 @@ class _BazaarScreenState extends State<BazaarScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => _AddItemSheet(
+      builder: (_) => GroceryAddItemSheet(
         initialName: name,
         initialQuantity: quantity,
         initialUnit: unit,
         initialCategory: category,
+        onSubmit: (payload) async {
+          final provider = context.read<GroceryProvider>();
+          await provider.addItem(
+            name: payload.name,
+            quantity: payload.quantity,
+            unit: payload.unit,
+            categoryId: payload.categoryId,
+            isImportant: payload.isImportant,
+            packCount: payload.packCount,
+            packSize: payload.packSize,
+          );
+        },
       ),
     );
   }
@@ -858,278 +885,6 @@ class _GroceryItemTile extends StatelessWidget {
 
 
 
-class _AddItemSheet extends StatefulWidget {
-  const _AddItemSheet({
-    required this.initialName,
-    this.initialQuantity,
-    this.initialUnit,
-    this.initialCategory,
-  });
-
-  final String initialName;
-  final double? initialQuantity;
-  final GroceryUnit? initialUnit;
-  final String? initialCategory;
-
-  @override
-  State<_AddItemSheet> createState() => _AddItemSheetState();
-}
-
-class _AddItemSheetState extends State<_AddItemSheet> {
-  late TextEditingController _nameController;
-  late TextEditingController _packSizeController;
-  int _packCount = 1;
-  GroceryUnit _unit = GroceryUnit.pcs;
-  String _category = 'Miscellaneous';
-  bool _important = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _nameController = TextEditingController(text: widget.initialName);
-    _packSizeController = TextEditingController(text: '');
-    _category = widget.initialCategory ?? _categoryForItem(widget.initialName);
-    final unitOptions = _unitsForCategory(_category);
-    _unit = widget.initialUnit ??
-        (unitOptions.isEmpty ? GroceryUnit.pcs : unitOptions.first);
-    _nameController.addListener(() {
-      final detected = _categoryForItem(_nameController.text.trim());
-      if (detected != _category) {
-        setState(() {
-          _category = detected;
-          final updatedUnits = _unitsForCategory(_category);
-          if (updatedUnits.isNotEmpty) {
-            _unit = updatedUnits.first;
-          }
-        });
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _packSizeController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
-    final unitOptions = _unitsForCategory(_category);
-    if (!unitOptions.contains(_unit) && unitOptions.isNotEmpty) {
-      _unit = unitOptions.first;
-    }
-    final quickPacks = _quickPacksForCategory(_category);
-
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        AppTheme.space24,
-        AppTheme.space24,
-        AppTheme.space24,
-        viewInsets + AppTheme.space24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Add Item', style: AppTextStyles.titleMedium),
-          const SizedBox(height: AppTheme.space16),
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(labelText: 'Item name'),
-          ),
-          const SizedBox(height: AppTheme.space12),
-          if (quickPacks.isNotEmpty) ...[
-            Wrap(
-              spacing: AppTheme.space8,
-              runSpacing: AppTheme.space8,
-              children: quickPacks
-                  .map(
-                    (chip) {
-                      final chipValue = chip.size % 1 == 0
-                          ? chip.size.toStringAsFixed(0)
-                          : chip.size.toString();
-                      return ChoiceChip(
-                        label: Text(chip.label),
-                        selected: _packSizeController.text == chipValue,
-                        onSelected: (_) {
-                          setState(() {
-                            _packSizeController.text = chipValue;
-                            _unit = chip.unit;
-                          });
-                        },
-                      );
-                    },
-                  )
-                  .toList(),
-            ),
-            const SizedBox(height: AppTheme.space12),
-          ],
-          Row(
-            children: [
-              const Text('Quantity'),
-              const SizedBox(width: AppTheme.space12),
-              IconButton(
-                onPressed: () => setState(() {
-                  _packCount = (_packCount - 1).clamp(1, 9999);
-                }),
-                icon: const Icon(Icons.remove_circle_outline),
-              ),
-              Text('$_packCount'),
-              IconButton(
-                onPressed: () => setState(() => _packCount += 1),
-                icon: const Icon(Icons.add_circle_outline),
-              ),
-              const SizedBox(width: AppTheme.space12),
-              DropdownButton<GroceryUnit>(
-                value: _unit,
-                items: unitOptions
-                    .map(
-                      (unit) => DropdownMenuItem(
-                        value: unit,
-                        child: Text(unit.label),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() => _unit = value);
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.space12),
-          TextField(
-            controller: _packSizeController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Pack size (optional)',
-            ),
-          ),
-          const SizedBox(height: AppTheme.space8),
-          SwitchListTile(
-            value: _important,
-            onChanged: (value) => setState(() => _important = value),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Mark item important'),
-          ),
-          const SizedBox(height: AppTheme.space16),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
-                ),
-              ),
-              const SizedBox(width: AppTheme.space12),
-              Expanded(
-                child: FilledButton(
-                  onPressed: _submit,
-                  child: const Text('Add'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _submit() {
-    final name = _nameController.text.trim();
-    if (name.isEmpty) return;
-    final packSize = double.tryParse(_packSizeController.text.trim()) ?? 0;
-    final totalQty = packSize > 0 ? packSize * _packCount : _packCount.toDouble();
-    final provider = context.read<GroceryProvider>();
-    final category = _categoryForItem(name);
-    provider.addItem(
-      name: name,
-      quantity: totalQty,
-      unit: _unit,
-      categoryId: category,
-      isImportant: _important,
-      packCount: _packCount,
-      packSize: packSize,
-    );
-    Navigator.of(context).pop();
-  }
-
-  String _categoryForItem(String name) {
-    for (final entry in DefaultGroceryCatalog.categories.entries) {
-      for (final item in entry.value) {
-        if (item.toLowerCase() == name.toLowerCase()) {
-          return entry.key;
-        }
-      }
-    }
-    return 'Miscellaneous';
-  }
-
-  List<GroceryUnit> _unitsForCategory(String categoryKey) {
-    final key = categoryKey.toLowerCase();
-    final units = <GroceryUnit>[];
-    if (key.contains('spice') ||
-        key.contains('grains') ||
-        key.contains('flour') ||
-        key.contains('dals') ||
-        key.contains('fruits') ||
-        key.contains('vegetables')) {
-      units.addAll([GroceryUnit.g, GroceryUnit.kg]);
-    } else if (key.contains('dairy') || key.contains('oils')) {
-      units.addAll([GroceryUnit.ml, GroceryUnit.litre]);
-    } else {
-      units.addAll([GroceryUnit.pcs]);
-    }
-    return units.toSet().toList();
-  }
-
-  List<_QuickPack> _quickPacksForCategory(String categoryKey) {
-    final key = categoryKey.toLowerCase();
-    if (key.contains('spice')) {
-      return const [
-        _QuickPack('50 g', 50, GroceryUnit.g),
-        _QuickPack('100 g', 100, GroceryUnit.g),
-        _QuickPack('200 g', 200, GroceryUnit.g),
-        _QuickPack('250 g', 250, GroceryUnit.g),
-        _QuickPack('500 g', 500, GroceryUnit.g),
-      ];
-    }
-    if (key.contains('grains') || key.contains('flour')) {
-      return const [
-        _QuickPack('250 g', 250, GroceryUnit.g),
-        _QuickPack('500 g', 500, GroceryUnit.g),
-        _QuickPack('1 kg', 1, GroceryUnit.kg),
-        _QuickPack('2 kg', 2, GroceryUnit.kg),
-        _QuickPack('5 kg', 5, GroceryUnit.kg),
-      ];
-    }
-    if (key.contains('dairy') || key.contains('oils')) {
-      return const [
-        _QuickPack('50 ml', 50, GroceryUnit.ml),
-        _QuickPack('100 ml', 100, GroceryUnit.ml),
-        _QuickPack('250 ml', 250, GroceryUnit.ml),
-        _QuickPack('500 ml', 500, GroceryUnit.ml),
-        _QuickPack('1 litre', 1, GroceryUnit.litre),
-      ];
-    }
-    return const [
-      _QuickPack('1 pcs', 1, GroceryUnit.pcs),
-      _QuickPack('2 pcs', 2, GroceryUnit.pcs),
-      _QuickPack('3 pcs', 3, GroceryUnit.pcs),
-    ];
-  }
-}
-
-class _QuickPack {
-  const _QuickPack(this.label, this.size, this.unit);
-
-  final String label;
-  final double size;
-  final GroceryUnit unit;
-}
-
 class _MoveToKitchenSheet extends StatefulWidget {
   const _MoveToKitchenSheet({required this.item});
 
@@ -1557,6 +1312,113 @@ class _SearchItem {
 
   final String name;
   final String categoryKey;
+}
+
+class _AdsSection extends StatelessWidget {
+  const _AdsSection({
+    required this.bannerFuture,
+    required this.productFuture,
+  });
+
+  final Future<List<AdItem>> bannerFuture;
+  final Future<List<AdItem>> productFuture;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        FutureBuilder<List<AdItem>>(
+          future: bannerFuture,
+          builder: (context, snapshot) {
+            final ads = snapshot.data ?? const <AdItem>[];
+            if (ads.isEmpty) return const SizedBox.shrink();
+            return _AdCard(ad: ads.first, variant: _AdVariant.banner);
+          },
+        ),
+        FutureBuilder<List<AdItem>>(
+          future: productFuture,
+          builder: (context, snapshot) {
+            final ads = snapshot.data ?? const <AdItem>[];
+            if (ads.isEmpty) return const SizedBox.shrink();
+            return _AdCard(ad: ads.first, variant: _AdVariant.product);
+          },
+        ),
+      ],
+    );
+  }
+}
+
+enum _AdVariant { banner, product }
+
+class _AdCard extends StatelessWidget {
+  const _AdCard({required this.ad, required this.variant});
+
+  final AdItem ad;
+  final _AdVariant variant;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.surfaceContainerHighest;
+    final titleStyle = Theme.of(context).textTheme.titleSmall;
+    final bodyStyle = Theme.of(context).textTheme.bodySmall;
+    final image = ad.imageUrl.isNotEmpty
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+            child: Image.network(
+              ad.imageUrl,
+              height: variant == _AdVariant.banner ? 120 : 72,
+              width: variant == _AdVariant.banner ? double.infinity : 72,
+              fit: BoxFit.cover,
+            ),
+          )
+        : Container(
+            height: variant == _AdVariant.banner ? 120 : 72,
+            width: variant == _AdVariant.banner ? double.infinity : 72,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(Icons.local_offer_outlined),
+          );
+
+    final content = variant == _AdVariant.banner
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              image,
+              const SizedBox(height: AppTheme.space8),
+              Text(ad.title, style: titleStyle),
+              if (ad.clickUrl.isNotEmpty) ...[
+                const SizedBox(height: AppTheme.space4),
+                Text('Sponsored', style: bodyStyle),
+              ],
+            ],
+          )
+        : Row(
+            children: [
+              image,
+              const SizedBox(width: AppTheme.space12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(ad.title, style: titleStyle),
+                    if (ad.clickUrl.isNotEmpty) ...[
+                      const SizedBox(height: AppTheme.space4),
+                      Text('Sponsored', style: bodyStyle),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppTheme.space12),
+      child: AppCard(child: content),
+    );
+  }
 }
 
 List<_ParsedVoiceItem> _parseVoiceItems(String input) {

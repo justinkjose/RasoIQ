@@ -1,10 +1,12 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 
-import 'package:rasoiq/services/firestore_service.dart';
-import 'package:rasoiq/screens/pantry_screen.dart';
+import '../features/grocery/data/grocery_repository.dart';
+import '../features/grocery/domain/shopping_list.dart';
+import '../features/grocery/presentation/shopping_list_detail_screen.dart';
+import '../providers/connectivity_provider.dart';
+import '../theme/app_theme.dart';
+import '../widgets/offline_banner.dart';
 
 class GroceryListScreen extends StatefulWidget {
   const GroceryListScreen({super.key});
@@ -14,155 +16,64 @@ class GroceryListScreen extends StatefulWidget {
 }
 
 class _GroceryListScreenState extends State<GroceryListScreen> {
-  final FirestoreService _firestoreService = FirestoreService();
-  final ImagePicker _imagePicker = ImagePicker();
+  final GroceryRepository _repository = GroceryRepository();
+  List<ShoppingList> _lists = [];
+  bool _loading = true;
 
-  Future<void> _showAddItemDialog() async {
-    final nameController = TextEditingController();
-    String? selectedCategory;
-    String? selectedUnit;
+  @override
+  void initState() {
+    super.initState();
+    _loadLists();
+  }
 
-    const categories = ['liquid', 'solid'];
+  Future<void> _loadLists() async {
+    setState(() => _loading = true);
+    final lists = await _repository.getLists();
+    if (!mounted) return;
+    setState(() {
+      _lists = lists;
+      _loading = false;
+    });
+  }
 
-    List<String> unitsForCategory(String? category) {
-      if (category == 'liquid') {
-        return ['litre', 'ml'];
-      }
-      if (category == 'solid') {
-        return ['kg', 'g'];
-      }
-      return [];
-    }
-
+  Future<void> _showCreateDialog(BuildContext context) async {
+    final controller = TextEditingController();
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final units = unitsForCategory(selectedCategory);
-            if (!units.contains(selectedUnit)) {
-              selectedUnit = null;
-            }
-
-            return AlertDialog(
-              title: const Text('Add Grocery Item'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Item name',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedCategory,
-                      items: categories
-                          .map(
-                            (category) => DropdownMenuItem<String>(
-                              value: category,
-                              child: Text(category.toUpperCase()),
-                            ),
-                          )
-                          .toList(),
-                      decoration: const InputDecoration(
-                        labelText: 'Category',
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: (value) {
-                        setDialogState(() {
-                          selectedCategory = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedUnit,
-                      items: units
-                          .map(
-                            (unit) => DropdownMenuItem<String>(
-                              value: unit,
-                              child: Text(unit.toUpperCase()),
-                            ),
-                          )
-                          .toList(),
-                      decoration: const InputDecoration(
-                        labelText: 'Unit',
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: (value) {
-                        setDialogState(() {
-                          selectedUnit = value;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () async {
-                    final name = nameController.text.trim();
-                    if (name.isEmpty ||
-                        selectedCategory == null ||
-                        selectedUnit == null) {
-                      ScaffoldMessenger.of(this.context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Please fill all fields.'),
-                        ),
-                      );
-                      return;
-                    }
-                    await _firestoreService.addGroceryItem(
-                      name,
-                      selectedCategory!,
-                      selectedUnit!,
-                    );
-                    if (!dialogContext.mounted) {
-                      return;
-                    }
-                    Navigator.of(dialogContext).pop();
-                  },
-                  child: const Text('Save'),
-                ),
-              ],
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            );
-          },
-        );
-      },
+      barrierDismissible: true,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Create Grocery List'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: 'Enter list name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final name = controller.text.trim();
+              if (name.isEmpty) return;
+              final navigator = Navigator.of(dialogContext);
+              await _repository.createList(name: name, icon: 'CART');
+              if (!mounted) return;
+              navigator.pop();
+              await _loadLists();
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
     );
   }
 
-  Future<void> _scanReceipt() async {
-    final image = await _imagePicker.pickImage(source: ImageSource.gallery);
-    if (image == null) {
-      return;
-    }
-
-    final inputImage = InputImage.fromFilePath(image.path);
-    final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
-    try {
-      final RecognizedText result =
-          await textRecognizer.processImage(inputImage);
-      debugPrint('Receipt text:\n${result.text}');
-    } finally {
-      textRecognizer.close();
-    }
-  }
-
-  void _openPantry() {
+  void _openList(ShoppingList list) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const PantryScreen()),
+      MaterialPageRoute(
+        builder: (_) => ShoppingListDetailScreen(listId: list.id),
+      ),
     );
   }
 
@@ -170,86 +81,82 @@ class _GroceryListScreenState extends State<GroceryListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('RasoIQ Grocery List'),
+        title: const Text('Grocery Lists'),
         actions: [
           IconButton(
-            tooltip: 'Scan receipt',
-            onPressed: _scanReceipt,
-            icon: const Icon(Icons.receipt_long),
-          ),
-          IconButton(
-            tooltip: 'Pantry',
-            onPressed: _openPantry,
-            icon: const Icon(Icons.kitchen),
+            onPressed: _loadLists,
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddItemDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('Add Item'),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showCreateDialog(context),
+        child: const Icon(Icons.add),
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _firestoreService.getGroceryItems(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+      body: Builder(
+        builder: (context) {
+          final isOffline = context.watch<ConnectivityProvider>().isOffline;
+          if (_loading) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (snapshot.hasError) {
-            return const Center(child: Text('Something went wrong.'));
+          if (_lists.isEmpty) {
+            return Column(
+              children: [
+                if (isOffline) const OfflineBanner(),
+                const Expanded(child: _EmptyState()),
+              ],
+            );
           }
-
-          final docs = snapshot.data?.docs ?? [];
-          if (docs.isEmpty) {
-            return const Center(child: Text('No items yet.'));
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: docs.length,
-            itemBuilder: (context, index) {
-              final doc = docs[index];
-              final data = doc.data();
-              final name = (data['name'] ?? '').toString();
-              final category = (data['category'] ?? '').toString();
-              final unit = (data['unit'] ?? '').toString();
-
-              return Dismissible(
-                key: ValueKey(doc.id),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade400,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Icon(Icons.delete, color: Colors.white),
+          return Column(
+            children: [
+              if (isOffline) const OfflineBanner(),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(AppTheme.space24),
+                  itemCount: _lists.length,
+                  itemBuilder: (context, index) {
+                    final list = _lists[index];
+                    return Padding(
+                      padding:
+                          const EdgeInsets.only(bottom: AppTheme.space12),
+                      child: Card(
+                        child: ListTile(
+                          title: Text(list.name),
+                          onTap: () => _openList(list),
+                          subtitle: FutureBuilder<int>(
+                            future: _repository.getItemsForList(list.id).then(
+                                  (items) => items.length,
+                                ),
+                            builder: (context, snapshot) {
+                              final count = snapshot.data ?? 0;
+                              return Text('$count items');
+                            },
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                        ),
+                      ),
+                    );
+                  },
                 ),
-                onDismissed: (_) => _firestoreService.deleteItem(doc.id),
-                child: Card(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 2,
-                  child: ListTile(
-                    title: Text(
-                      name,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(
-                      '${category.toUpperCase()} - ${unit.toUpperCase()}',
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                  ),
-                ),
-              );
-            },
+              ),
+            ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        'No lists yet. Tap + to create one.',
+        style: Theme.of(context).textTheme.bodyMedium,
       ),
     );
   }

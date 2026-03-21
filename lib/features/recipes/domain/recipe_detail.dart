@@ -36,4 +36,17 @@ class RecipeDetail {
       nutrition: RecipeNutrition.fromJson(json['nutrition'] as Map<String, dynamic>),
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'image': image,
+      'description': description,
+      'cookTimeMinutes': cookTimeMinutes,
+      'ingredients': ingredients.map((item) => item.toJson()).toList(),
+      'steps': steps,
+      'nutrition': nutrition.toJson(),
+    };
+  }
 }

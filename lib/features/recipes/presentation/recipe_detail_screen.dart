@@ -9,10 +9,12 @@ class RecipeDetailScreen extends StatelessWidget {
     super.key,
     required this.recipe,
     required this.onAddMissing,
+    required this.availableIngredients,
   });
 
   final RecipeDetail recipe;
   final VoidCallback onAddMissing;
+  final Set<String> availableIngredients;
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +65,9 @@ class RecipeDetailScreen extends StatelessWidget {
                   AppCard(
                     child: Column(
                       children: recipe.ingredients.map((ingredient) {
+                        final available = availableIngredients.contains(
+                          _normalize(ingredient.name),
+                        );
                         return Padding(
                           padding: const EdgeInsets.symmetric(
                             vertical: AppTheme.space8,
@@ -73,17 +78,17 @@ class RecipeDetailScreen extends StatelessWidget {
                                 width: 28,
                                 height: 28,
                                 decoration: BoxDecoration(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .primary
+                                  color: (available
+                                          ? Colors.green
+                                          : Colors.red)
                                       .withValues(alpha: 0.12),
                                   borderRadius:
                                       BorderRadius.circular(AppTheme.radiusSmall),
                                 ),
                                 child: Icon(
-                                  Icons.check,
+                                  available ? Icons.check : Icons.close,
                                   size: 16,
-                                  color: Theme.of(context).colorScheme.primary,
+                                  color: available ? Colors.green : Colors.red,
                                 ),
                               ),
                               const SizedBox(width: AppTheme.space12),
@@ -187,6 +192,14 @@ class RecipeDetailScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _normalize(String input) {
+    return input
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9\\s]'), ' ')
+        .replaceAll(RegExp(r'\\s+'), ' ')
+        .trim();
   }
 }
 
